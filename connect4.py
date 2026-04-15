@@ -1,7 +1,8 @@
 import tkinter as tk
 from tkinter import font as tkfont
 import threading
-import time
+import random
+import math
 
 ROWS, COLS = 6, 7
 CELL = 90
@@ -18,6 +19,9 @@ RED_HL  = "#ff8a80"
 YEL_HL  = "#fff176"
 WHITE   = "#eeeeee"
 GREY    = "#aaaaaa"
+
+# Difficulty → minimax depth (0 = random / Easy)
+DIFFICULTIES = [("Easy", 0), ("Medium", 3), ("Hard", 6)]
 
 
 # ── AI helpers ──────────────────────────────────────────────────────────────
@@ -48,10 +52,10 @@ def score_window(window, player):
     p = window.count(player)
     e = window.count(None)
     o = window.count(opp)
-    if p == 4:           return  100
-    if p == 3 and e == 1: return   5
-    if p == 2 and e == 2: return   2
-    if o == 3 and e == 1: return  -4
+    if p == 4:            return  100
+    if p == 3 and e == 1: return    5
+    if p == 2 and e == 2: return    2
+    if o == 3 and e == 1: return   -4
     if o == 4:            return -100
     return 0
 
@@ -77,7 +81,6 @@ def score_board(board, player):
 
 def minimax(board, depth, alpha, beta, maximizing, ai_player):
     human = "red" if ai_player == "yellow" else "yellow"
-    # Check for terminal win
     for r in range(ROWS):
         for c in range(COLS):
             if board[r][c] is not None:
@@ -114,18 +117,44 @@ def minimax(board, depth, alpha, beta, maximizing, ai_player):
         return val
 
 
-def best_move(board, ai_player):
+def best_move(board, ai_player, depth):
+    if depth == 0:
+        valid = [c for c in range(COLS) if get_open_row(board, c) != -1]
+        return random.choice(valid)
     best_val, best_col = -10**9, 3
     for c in range(COLS):
         r = get_open_row(board, c)
         if r == -1:
             continue
         board[r][c] = ai_player
-        val = minimax(board, 5, -10**9, 10**9, False, ai_player)
+        val = minimax(board, depth, -10**9, 10**9, False, ai_player)
         board[r][c] = None
         if val > best_val:
             best_val, best_col = val, c
     return best_col
+
+
+# ── Fireworks particle system ────────────────────────────────────────────────
+class Particle:
+    def __init__(self, x, y, color):
+        angle = random.uniform(0, math.pi * 2)
+        speed = random.uniform(2, 8)
+        self.x  = x
+        self.y  = y
+        self.vx = math.cos(angle) * speed
+        self.vy = math.sin(angle) * speed
+        self.r  = random.randint(3, 6)
+        self.color = color
+        self.life  = random.randint(40, 80)
+        self.max_life = self.life
+        self._id = None  # canvas item id
+
+    def step(self):
+        self.x  += self.vx
+        self.y  += self.vy
+        self.vy += 0.18   # gravity
+        self.vx *= 0.99
+        self.life -= 2
 
 
 # ── Main game window ─────────────────────────────────────────────────────────
@@ -136,18 +165,21 @@ class Connect4(tk.Tk):
         self.resizable(False, False)
         self.configure(bg=BG)
 
-        self.board       = [[None] * COLS for _ in range(ROWS)]
-        self.current     = "red"
-        self.game_over   = False
-        self.vs_ai       = False
-        self.scores      = {"red": 0, "yellow": 0, "draw": 0}
-        self.win_cells   = []
-        self.flash_on    = False
-        self._flash_job  = None
-        self.hover_col   = None
+        self.board        = [[None] * COLS for _ in range(ROWS)]
+        self.current      = "red"
+        self.game_over    = False
+        self.vs_ai        = False
+        self.ai_depth     = 0       # Easy by default
+        self.scores       = {"red": 0, "yellow": 0, "draw": 0}
+        self.win_cells    = []
+        self.flash_on     = False
+        self._flash_job   = None
+        self.hover_col    = None
+        self._fw_job      = None
+        self._particles   = []
 
         self._build_ui()
-        self.bind("<Motion>", self._on_mouse_move)
+        self.bind("<Motion>",   self._on_mouse_move)
         self.bind("<Button-1>", self._on_click)
 
     # ── UI construction ──────────────────────────────────────────
@@ -155,61 +187,88 @@ class Connect4(tk.Tk):
         big   = tkfont.Font(family="Segoe UI", size=22, weight="bold")
         med   = tkfont.Font(family="Segoe UI", size=12)
         small = tkfont.Font(family="Segoe UI", size=10)
+        tiny  = tkfont.Font(family="Segoe UI", size=9, weight="bold")
 
-        # Title
-        tk.Label(self, text="CONNECT 4", bg=BG, fg="#f0c040",
-                 font=big).pack(pady=(18, 4))
+        tk.Label(self, text="CONNECT 4", bg=BG, fg="#f0c040", font=big).pack(pady=(18, 4))
 
         # Score bar
         score_frame = tk.Frame(self, bg=BG)
         score_frame.pack(pady=(0, 8))
 
-        self.lbl_p1 = tk.Label(score_frame, text="Player 1", bg=BG,
-                                fg=RED, font=small)
+        self.lbl_p1 = tk.Label(score_frame, text="Player 1", bg=BG, fg=RED,    font=small)
         self.lbl_p1.grid(row=0, column=0, padx=20)
-        tk.Label(score_frame, text="Draws", bg=BG, fg=GREY,
-                 font=small).grid(row=0, column=1, padx=20)
-        self.lbl_p2 = tk.Label(score_frame, text="Player 2", bg=BG,
-                                fg=YELLOW, font=small)
+        tk.Label(score_frame, text="Draws",    bg=BG, fg=GREY,   font=small).grid(row=0, column=1, padx=20)
+        self.lbl_p2 = tk.Label(score_frame, text="Player 2", bg=BG, fg=YELLOW, font=small)
         self.lbl_p2.grid(row=0, column=2, padx=20)
 
-        self.score_red  = tk.Label(score_frame, text="0", bg=BG,
-                                    fg=RED,    font=big)
+        self.score_red  = tk.Label(score_frame, text="0", bg=BG, fg=RED,    font=big)
         self.score_red.grid(row=1, column=0, padx=20)
-        self.score_draw = tk.Label(score_frame, text="0", bg=BG,
-                                    fg=GREY,   font=big)
+        self.score_draw = tk.Label(score_frame, text="0", bg=BG, fg=GREY,   font=big)
         self.score_draw.grid(row=1, column=1, padx=20)
-        self.score_yel  = tk.Label(score_frame, text="0", bg=BG,
-                                    fg=YELLOW, font=big)
+        self.score_yel  = tk.Label(score_frame, text="0", bg=BG, fg=YELLOW, font=big)
         self.score_yel.grid(row=1, column=2, padx=20)
 
         # Status
         self.status_var = tk.StringVar(value="Red's turn")
-        self.status_lbl = tk.Label(self, textvariable=self.status_var,
-                                    bg=BG, fg=RED, font=med)
+        self.status_lbl = tk.Label(self, textvariable=self.status_var, bg=BG, fg=RED, font=med)
         self.status_lbl.pack(pady=(0, 8))
 
-        # Canvas
+        # Main canvas (board + fireworks share the same canvas)
         self.canvas = tk.Canvas(self, width=WIDTH, height=HEIGHT,
-                                 bg=BOARD, highlightthickness=0)
+                                bg=BOARD, highlightthickness=0)
         self.canvas.pack(padx=20)
 
-        # Buttons
+        # Button row
         btn_frame = tk.Frame(self, bg=BG)
-        btn_frame.pack(pady=14)
+        btn_frame.pack(pady=(10, 4))
 
         tk.Button(btn_frame, text="New Game", command=self._new_game,
                   bg="#f0c040", fg=BG, font=med, padx=16, pady=6,
                   relief="flat", cursor="hand2").grid(row=0, column=0, padx=8)
 
         self.mode_btn = tk.Button(btn_frame, text="vs CPU",
-                                   command=self._toggle_mode,
-                                   bg="#26a69a", fg="white", font=med,
-                                   padx=16, pady=6, relief="flat",
-                                   cursor="hand2")
+                                  command=self._toggle_mode,
+                                  bg="#26a69a", fg="white", font=med,
+                                  padx=16, pady=6, relief="flat", cursor="hand2")
         self.mode_btn.grid(row=0, column=1, padx=8)
 
+        # Difficulty row (shown only in CPU mode)
+        self.diff_frame = tk.Frame(self, bg=BG)
+        self.diff_frame.pack(pady=(4, 14))
+
+        tk.Label(self.diff_frame, text="Difficulty:", bg=BG, fg=GREY,
+                 font=small).grid(row=0, column=0, padx=(0, 6))
+
+        self._diff_btns = []
+        for i, (label, depth) in enumerate(DIFFICULTIES):
+            colors = {
+                "Easy":   ("#2e7d32", "#4caf50"),
+                "Medium": ("#e65100", "#ff9800"),
+                "Hard":   ("#b71c1c", "#ef5350"),
+            }
+            bg_on, _ = colors[label]
+            btn = tk.Button(
+                self.diff_frame, text=label, font=tiny,
+                padx=10, pady=3, relief="flat", cursor="hand2",
+                command=lambda d=depth, idx=i: self._set_difficulty(d, idx)
+            )
+            btn.grid(row=0, column=i + 1, padx=4)
+            self._diff_btns.append((btn, bg_on, label))
+
+        self._set_difficulty(0, 0)   # start on Easy
+        self.diff_frame.pack_forget() # hidden until CPU mode
+
         self._draw_board()
+
+    # ── Difficulty ───────────────────────────────────────────────
+    def _set_difficulty(self, depth, active_idx):
+        self.ai_depth = depth
+        labels = {"Easy": ("#2e7d32","#fff"), "Medium": ("#e65100","#fff"), "Hard": ("#b71c1c","#fff")}
+        for i, (btn, bg_on, label) in enumerate(self._diff_btns):
+            if i == active_idx:
+                btn.config(bg=bg_on, fg="#fff", relief="solid")
+            else:
+                btn.config(bg="#16213e", fg=GREY, relief="flat")
 
     # ── Drawing ──────────────────────────────────────────────────
     def _cell_xy(self, row, col):
@@ -218,36 +277,32 @@ class Connect4(tk.Tk):
         return x, y
 
     def _draw_board(self):
-        self.canvas.delete("all")
+        self.canvas.delete("board")
         for r in range(ROWS):
             for c in range(COLS):
                 self._draw_cell(r, c)
 
     def _draw_cell(self, r, c, flash=False):
         x, y = self._cell_xy(r, c)
-        r0, r1 = x - CELL // 2 + 4, x + CELL // 2 - 4
-        t0, t1 = y - CELL // 2 + 4, y + CELL // 2 - 4
-
+        x0, x1 = x - CELL // 2 + 4, x + CELL // 2 - 4
+        y0, y1 = y - CELL // 2 + 4, y + CELL // 2 - 4
         val = self.board[r][c]
 
         if val is None:
-            # Show ghost piece when hovering
             if (not self.game_over and self.hover_col == c
                     and get_open_row(self.board, c) == r):
                 ghost = RED_HL if self.current == "red" else YEL_HL
-                self.canvas.create_oval(r0, t0, r1, t1,
-                                         fill=ghost, outline="", stipple="gray50")
+                self.canvas.create_oval(x0, y0, x1, y1,
+                                        fill=ghost, outline="", stipple="gray50", tags="board")
             else:
-                self.canvas.create_oval(r0, t0, r1, t1,
-                                         fill=EMPTY, outline="")
+                self.canvas.create_oval(x0, y0, x1, y1,
+                                        fill=EMPTY, outline="", tags="board")
         elif val == "red":
-            colour = RED_HL if flash else RED
-            self.canvas.create_oval(r0, t0, r1, t1,
-                                     fill=colour, outline="")
+            self.canvas.create_oval(x0, y0, x1, y1,
+                                    fill=RED_HL if flash else RED, outline="", tags="board")
         else:
-            colour = YEL_HL if flash else YELLOW
-            self.canvas.create_oval(r0, t0, r1, t1,
-                                     fill=colour, outline="")
+            self.canvas.create_oval(x0, y0, x1, y1,
+                                    fill=YEL_HL if flash else YELLOW, outline="", tags="board")
 
     def _redraw_win_cells(self):
         if not self.win_cells:
@@ -256,6 +311,50 @@ class Connect4(tk.Tk):
         for wr, wc in self.win_cells:
             self._draw_cell(wr, wc, flash=self.flash_on)
         self._flash_job = self.after(500, self._redraw_win_cells)
+
+    # ── Fireworks ────────────────────────────────────────────────
+    def _launch_fireworks(self, winner):
+        if self._fw_job:
+            self.after_cancel(self._fw_job)
+        self.canvas.delete("fw")
+        self._particles = []
+
+        red_colors    = ["#ef5350","#ff8a80","#ff1744","#ffcdd2","#ff6d00","white"]
+        yellow_colors = ["#fdd835","#fff176","#ffea00","#fffde7","#ff6f00","white"]
+        colors = red_colors if winner == "red" else yellow_colors
+
+        # Several bursts at staggered times
+        for i in range(6):
+            self.after(i * 400, lambda c=colors: self._burst(c))
+
+        self._fw_animate()
+
+    def _burst(self, colors):
+        cx = random.randint(WIDTH  // 5, WIDTH  * 4 // 5)
+        cy = random.randint(HEIGHT // 6, HEIGHT * 2 // 3)
+        for _ in range(90):
+            p = Particle(cx, cy, random.choice(colors))
+            self._particles.append(p)
+
+    def _fw_animate(self):
+        self.canvas.delete("fw")
+        alive = []
+        for p in self._particles:
+            p.step()
+            if p.life > 0:
+                alpha_ratio = p.life / p.max_life
+                # Fake alpha by blending toward background colour
+                colour = p.color
+                r0, r1 = p.x - p.r, p.x + p.r
+                c0, c1 = p.y - p.r, p.y + p.r
+                self.canvas.create_oval(r0, c0, r1, c1,
+                                        fill=colour, outline="", tags="fw")
+                alive.append(p)
+        self._particles = alive
+        if self._particles:
+            self._fw_job = self.after(30, self._fw_animate)
+        else:
+            self._fw_job = None
 
     # ── Interaction ──────────────────────────────────────────────
     def _col_from_x(self, x):
@@ -268,13 +367,9 @@ class Connect4(tk.Tk):
     def _on_mouse_move(self, event):
         if self.game_over:
             return
-        widget = event.widget
-        # translate to canvas coords
         try:
             cx = self.canvas.winfo_rootx()
-            cy = self.canvas.winfo_rooty()
             rx = event.x_root - cx
-            ry = event.y_root - cy
         except Exception:
             return
         col = self._col_from_x(rx)
@@ -307,9 +402,10 @@ class Connect4(tk.Tk):
             self.scores[self.current] += 1
             self._update_scores()
             name = "Red" if self.current == "red" else ("CPU" if self.vs_ai else "Yellow")
-            self._set_status(f"{name} wins! 🎉", self.current)
+            self._set_status(f"{name} wins!", self.current)
             self.game_over = True
             self._redraw_win_cells()
+            self._launch_fireworks(self.current)
             return
 
         if all(self.board[0][c] is not None for c in range(COLS)):
@@ -329,21 +425,20 @@ class Connect4(tk.Tk):
             self._set_status(f"{name}'s turn", self.current)
 
     def _ai_move(self):
-        # Run minimax in a thread so the UI doesn't freeze
+        depth = self.ai_depth
+
         def run():
-            col = best_move(self.board, "yellow")
+            col = best_move(self.board, "yellow", depth)
             self.after(0, lambda: self._drop(col))
+
         threading.Thread(target=run, daemon=True).start()
 
     # ── Helpers ──────────────────────────────────────────────────
     def _set_status(self, text, player):
         self.status_var.set(text)
-        if player == "red":
-            self.status_lbl.config(fg=RED)
-        elif player == "yellow":
-            self.status_lbl.config(fg=YELLOW)
-        else:
-            self.status_lbl.config(fg=WHITE)
+        if player == "red":       self.status_lbl.config(fg=RED)
+        elif player == "yellow":  self.status_lbl.config(fg=YELLOW)
+        else:                     self.status_lbl.config(fg=WHITE)
 
     def _update_scores(self):
         self.score_red.config( text=str(self.scores["red"]))
@@ -351,15 +446,18 @@ class Connect4(tk.Tk):
         self.score_draw.config(text=str(self.scores["draw"]))
 
     def _new_game(self):
-        if self._flash_job:
-            self.after_cancel(self._flash_job)
-            self._flash_job = None
-        self.board     = [[None] * COLS for _ in range(ROWS)]
-        self.current   = "red"
-        self.game_over = False
-        self.win_cells = []
-        self.flash_on  = False
-        self.hover_col = None
+        for job in (self._flash_job, self._fw_job):
+            if job:
+                self.after_cancel(job)
+        self._flash_job = self._fw_job = None
+        self.canvas.delete("fw")
+        self._particles = []
+        self.board      = [[None] * COLS for _ in range(ROWS)]
+        self.current    = "red"
+        self.game_over  = False
+        self.win_cells  = []
+        self.flash_on   = False
+        self.hover_col  = None
         self._draw_board()
         self._set_status("Red's turn", "red")
 
@@ -367,6 +465,10 @@ class Connect4(tk.Tk):
         self.vs_ai = not self.vs_ai
         self.mode_btn.config(text="vs Human" if self.vs_ai else "vs CPU")
         self.lbl_p2.config(text="CPU" if self.vs_ai else "Player 2")
+        if self.vs_ai:
+            self.diff_frame.pack(pady=(4, 14))
+        else:
+            self.diff_frame.pack_forget()
         self.scores = {"red": 0, "yellow": 0, "draw": 0}
         self._update_scores()
         self._new_game()

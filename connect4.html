@@ -38,6 +38,7 @@
       border-radius: 16px;
       padding: 16px;
       box-shadow: 0 8px 40px rgba(0,0,0,0.5);
+      position: relative;
     }
 
     #column-arrows {
@@ -58,11 +59,8 @@
       border-radius: 6px;
     }
 
-    .arrow-btn:hover {
-      transform: scale(1.2);
-    }
-
-    .arrow-btn.red-turn:hover { color: #ef5350; }
+    .arrow-btn:hover { transform: scale(1.2); }
+    .arrow-btn.red-turn:hover    { color: #ef5350; }
     .arrow-btn.yellow-turn:hover { color: #fdd835; }
 
     #board {
@@ -104,6 +102,8 @@
       display: flex;
       gap: 12px;
       margin-top: 24px;
+      flex-wrap: wrap;
+      justify-content: center;
     }
 
     button.action-btn {
@@ -121,15 +121,40 @@
       box-shadow: 0 4px 14px rgba(0,0,0,0.3);
     }
 
-    #restart-btn {
-      background: #f0c040;
-      color: #1a1a2e;
+    #restart-btn { background: #f0c040; color: #1a1a2e; }
+    #mode-btn    { background: #26a69a; color: #fff; }
+
+    /* Difficulty buttons */
+    #difficulty {
+      display: flex;
+      gap: 8px;
+      margin-top: 12px;
+      align-items: center;
     }
 
-    #mode-btn {
-      background: #26a69a;
-      color: #fff;
+    #difficulty span {
+      font-size: 0.85rem;
+      opacity: 0.7;
+      margin-right: 4px;
     }
+
+    .diff-btn {
+      padding: 6px 16px;
+      border: 2px solid transparent;
+      border-radius: 6px;
+      font-size: 0.85rem;
+      font-weight: 600;
+      cursor: pointer;
+      background: #16213e;
+      color: #aaa;
+      transition: all 0.15s;
+    }
+
+    .diff-btn:hover { color: #fff; border-color: #555; }
+
+    .diff-btn.active-easy   { background: #2e7d32; color: #fff; border-color: #4caf50; }
+    .diff-btn.active-medium { background: #e65100; color: #fff; border-color: #ff9800; }
+    .diff-btn.active-hard   { background: #b71c1c; color: #fff; border-color: #ef5350; }
 
     #score {
       display: flex;
@@ -138,9 +163,7 @@
       font-size: 1rem;
     }
 
-    .score-box {
-      text-align: center;
-    }
+    .score-box { text-align: center; }
 
     .score-label {
       font-size: 0.8rem;
@@ -149,16 +172,23 @@
       letter-spacing: 1px;
     }
 
-    .score-val {
-      font-size: 2rem;
-      font-weight: 700;
-    }
-
-    .score-val.red  { color: #ef5350; }
+    .score-val { font-size: 2rem; font-weight: 700; }
+    .score-val.red    { color: #ef5350; }
     .score-val.yellow { color: #fdd835; }
+
+    /* Fireworks canvas */
+    #fireworks {
+      position: fixed;
+      top: 0; left: 0;
+      width: 100%; height: 100%;
+      pointer-events: none;
+      z-index: 999;
+    }
   </style>
 </head>
 <body>
+
+<canvas id="fireworks"></canvas>
 
 <h1>Connect 4</h1>
 
@@ -189,17 +219,39 @@
   <button class="action-btn" id="mode-btn">vs CPU</button>
 </div>
 
+<div id="difficulty">
+  <span>Difficulty:</span>
+  <button class="diff-btn active-easy" data-depth="0" id="diff-easy">Easy</button>
+  <button class="diff-btn"             data-depth="3" id="diff-medium">Medium</button>
+  <button class="diff-btn"             data-depth="6" id="diff-hard">Hard</button>
+</div>
+
 <script>
   const ROWS = 6, COLS = 7;
-  let board, currentPlayer, gameOver, scores, vsAI, aiThinking;
+  let board, currentPlayer, gameOver, scores, vsAI, aiThinking, aiDepth;
 
-  scores = { red: 0, yellow: 0, draw: 0 };
-  vsAI = false;
+  scores  = { red: 0, yellow: 0, draw: 0 };
+  vsAI    = false;
+  aiDepth = 0; // 0 = Easy (random), 3 = Medium, 6 = Hard
+
+  // ── Difficulty buttons ─────────────────────────────────────────
+  document.querySelectorAll('.diff-btn').forEach(btn => {
+    btn.addEventListener('click', () => {
+      document.querySelectorAll('.diff-btn').forEach(b => {
+        b.className = 'diff-btn';
+      });
+      const depth = parseInt(btn.dataset.depth);
+      aiDepth = depth;
+      if (depth === 0)      btn.classList.add('active-easy');
+      else if (depth === 3) btn.classList.add('active-medium');
+      else                  btn.classList.add('active-hard');
+    });
+  });
 
   function init() {
     board = Array.from({ length: ROWS }, () => Array(COLS).fill(null));
     currentPlayer = 'red';
-    gameOver = false;
+    gameOver  = false;
     aiThinking = false;
     renderBoard();
     setStatus(`${playerName('red')}'s turn`, 'red');
@@ -266,8 +318,10 @@
       flashCells(wins);
       scores[currentPlayer]++;
       updateScoreDisplay();
-      setStatus(`${playerName(currentPlayer)} wins! 🎉`, currentPlayer);
+      const name = playerName(currentPlayer);
+      setStatus(`${name} wins!`, currentPlayer);
       gameOver = true;
+      launchFireworks(currentPlayer);
       return;
     }
 
@@ -288,7 +342,7 @@
       setTimeout(() => {
         aiMove();
         aiThinking = false;
-      }, 350);
+      }, 300);
     } else {
       setStatus(`${playerName(currentPlayer)}'s turn`, currentPlayer);
     }
@@ -301,9 +355,7 @@
     return -1;
   }
 
-  function isDraw() {
-    return board[0].every(cell => cell !== null);
-  }
+  function isDraw() { return board[0].every(cell => cell !== null); }
 
   function checkWin(row, col, player) {
     const dirs = [[0,1],[1,0],[1,1],[1,-1]];
@@ -322,9 +374,8 @@
   }
 
   function flashCells(cells) {
-    for (const [r, c] of cells) {
+    for (const [r, c] of cells)
       document.getElementById(`cell-${r}-${c}`).classList.add('win-flash');
-    }
   }
 
   function updateArrows() {
@@ -334,24 +385,32 @@
   }
 
   function updateScoreDisplay() {
-    document.getElementById('score-red').textContent   = scores.red;
+    document.getElementById('score-red').textContent    = scores.red;
     document.getElementById('score-yellow').textContent = scores.yellow;
-    document.getElementById('score-draw').textContent  = scores.draw;
+    document.getElementById('score-draw').textContent   = scores.draw;
   }
 
-  // ── AI (minimax, depth 5) ──────────────────────────────────────
+  // ── AI ─────────────────────────────────────────────────────────
   function aiMove() {
-    const col = bestMove();
+    let col;
+    if (aiDepth === 0) {
+      // Easy: random valid column
+      const valid = [];
+      for (let c = 0; c < COLS; c++) if (getOpenRow(c) !== -1) valid.push(c);
+      col = valid[Math.floor(Math.random() * valid.length)];
+    } else {
+      col = bestMove(aiDepth);
+    }
     dropPiece(col);
   }
 
-  function bestMove() {
+  function bestMove(depth) {
     let best = -Infinity, bestCol = 3;
     for (let c = 0; c < COLS; c++) {
       if (getOpenRow(c) === -1) continue;
       const r = getOpenRow(c);
       board[r][c] = 'yellow';
-      const score = minimax(board, 5, -Infinity, Infinity, false);
+      const score = minimax(board, depth, -Infinity, Infinity, false);
       board[r][c] = null;
       if (score > best) { best = score; bestCol = c; }
     }
@@ -359,12 +418,11 @@
   }
 
   function minimax(b, depth, alpha, beta, maximizing) {
-    // Check terminal states
     for (let r = 0; r < ROWS; r++) {
       for (let c = 0; c < COLS; c++) {
         if (!b[r][c]) continue;
-        const w = checkWinBoard(b, r, c, b[r][c]);
-        if (w) return b[r][c] === 'yellow' ? 1000 + depth : -(1000 + depth);
+        if (checkWinBoard(b, r, c, b[r][c]))
+          return b[r][c] === 'yellow' ? 1000 + depth : -(1000 + depth);
       }
     }
     if (depth === 0 || b[0].every(cell => cell !== null)) return scoreBoard(b);
@@ -416,7 +474,6 @@
 
   function scoreBoard(b) {
     let s = 0;
-    // centre column preference
     for (let r = 0; r < ROWS; r++) {
       if (b[r][3] === 'yellow') s += 3;
       else if (b[r][3] === 'red') s -= 3;
@@ -450,17 +507,95 @@
     return 0;
   }
 
+  // ── Fireworks ──────────────────────────────────────────────────
+  const fwCanvas = document.getElementById('fireworks');
+  const fwCtx    = fwCanvas.getContext('2d');
+  let   fwFrame  = null;
+  let   particles = [];
+
+  function resizeFireworks() {
+    fwCanvas.width  = window.innerWidth;
+    fwCanvas.height = window.innerHeight;
+  }
+  window.addEventListener('resize', resizeFireworks);
+  resizeFireworks();
+
+  function launchFireworks(winner) {
+    if (fwFrame) cancelAnimationFrame(fwFrame);
+    particles = [];
+
+    const baseColors = winner === 'red'
+      ? ['#ef5350','#ff8a80','#ff1744','#ffcdd2','#ff6d00','#fff']
+      : ['#fdd835','#fff176','#ffea00','#fffde7','#ff6f00','#fff'];
+
+    // Launch several bursts from random positions
+    const numBursts = 6;
+    for (let b = 0; b < numBursts; b++) {
+      setTimeout(() => burst(baseColors), b * 350);
+    }
+
+    const start = performance.now();
+    const duration = 4000;
+
+    function animate(now) {
+      fwCtx.clearRect(0, 0, fwCanvas.width, fwCanvas.height);
+      particles = particles.filter(p => p.life > 0);
+      for (const p of particles) {
+        p.x  += p.vx;
+        p.y  += p.vy;
+        p.vy += 0.12;   // gravity
+        p.vx *= 0.99;
+        p.life -= 1.5;
+        fwCtx.globalAlpha = Math.max(0, p.life / p.maxLife);
+        fwCtx.fillStyle = p.color;
+        fwCtx.beginPath();
+        fwCtx.arc(p.x, p.y, p.r, 0, Math.PI * 2);
+        fwCtx.fill();
+      }
+      fwCtx.globalAlpha = 1;
+      if (now - start < duration) fwFrame = requestAnimationFrame(animate);
+      else fwCtx.clearRect(0, 0, fwCanvas.width, fwCanvas.height);
+    }
+    fwFrame = requestAnimationFrame(animate);
+  }
+
+  function burst(colors) {
+    const x = fwCanvas.width  * (0.2 + Math.random() * 0.6);
+    const y = fwCanvas.height * (0.1 + Math.random() * 0.5);
+    const count = 80 + Math.floor(Math.random() * 40);
+    for (let i = 0; i < count; i++) {
+      const angle  = (Math.PI * 2 * i) / count + Math.random() * 0.3;
+      const speed  = 2 + Math.random() * 5;
+      const life   = 60 + Math.random() * 40;
+      particles.push({
+        x, y,
+        vx: Math.cos(angle) * speed,
+        vy: Math.sin(angle) * speed,
+        r: 2 + Math.random() * 3,
+        color: colors[Math.floor(Math.random() * colors.length)],
+        life, maxLife: life
+      });
+    }
+  }
+
   // ── Controls ───────────────────────────────────────────────────
-  document.getElementById('restart-btn').addEventListener('click', init);
+  document.getElementById('restart-btn').addEventListener('click', () => {
+    if (fwFrame) { cancelAnimationFrame(fwFrame); fwCtx.clearRect(0, 0, fwCanvas.width, fwCanvas.height); }
+    init();
+  });
 
   document.getElementById('mode-btn').addEventListener('click', () => {
     vsAI = !vsAI;
-    document.getElementById('mode-btn').textContent = vsAI ? 'vs Human' : 'vs CPU';
-    document.getElementById('p2-label').textContent = vsAI ? 'CPU' : 'Player 2';
+    document.getElementById('mode-btn').textContent  = vsAI ? 'vs Human' : 'vs CPU';
+    document.getElementById('p2-label').textContent  = vsAI ? 'CPU' : 'Player 2';
+    document.getElementById('difficulty').style.display = vsAI ? 'flex' : 'none';
     scores = { red: 0, yellow: 0, draw: 0 };
     updateScoreDisplay();
     init();
   });
+
+  // Hide difficulty until CPU mode is active
+  document.getElementById('difficulty').style.display = 'none';
 
   init();
 </script>
