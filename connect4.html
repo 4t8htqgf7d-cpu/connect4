@@ -1,0 +1,468 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Connect 4</title>
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+
+    body {
+      background: #1a1a2e;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      min-height: 100vh;
+      font-family: 'Segoe UI', sans-serif;
+      color: #eee;
+    }
+
+    h1 {
+      font-size: 2.5rem;
+      margin-bottom: 16px;
+      letter-spacing: 2px;
+      color: #f0c040;
+      text-shadow: 0 0 20px rgba(240,192,64,0.4);
+    }
+
+    #status {
+      font-size: 1.2rem;
+      margin-bottom: 20px;
+      height: 1.6rem;
+      transition: color 0.3s;
+    }
+
+    #board-wrapper {
+      background: #1565c0;
+      border-radius: 16px;
+      padding: 16px;
+      box-shadow: 0 8px 40px rgba(0,0,0,0.5);
+    }
+
+    #column-arrows {
+      display: grid;
+      grid-template-columns: repeat(7, 70px);
+      gap: 8px;
+      margin-bottom: 6px;
+    }
+
+    .arrow-btn {
+      height: 36px;
+      background: transparent;
+      border: none;
+      cursor: pointer;
+      font-size: 1.4rem;
+      color: transparent;
+      transition: color 0.15s, transform 0.1s;
+      border-radius: 6px;
+    }
+
+    .arrow-btn:hover {
+      transform: scale(1.2);
+    }
+
+    .arrow-btn.red-turn:hover { color: #ef5350; }
+    .arrow-btn.yellow-turn:hover { color: #fdd835; }
+
+    #board {
+      display: grid;
+      grid-template-columns: repeat(7, 70px);
+      grid-template-rows: repeat(6, 70px);
+      gap: 8px;
+    }
+
+    .cell {
+      width: 70px;
+      height: 70px;
+      border-radius: 50%;
+      background: #0d47a1;
+      box-shadow: inset 0 4px 10px rgba(0,0,0,0.4);
+      transition: background 0.2s;
+    }
+
+    .cell.red {
+      background: radial-gradient(circle at 35% 35%, #ff8a80, #c62828);
+      box-shadow: inset 0 -3px 6px rgba(0,0,0,0.3), 0 0 12px rgba(198,40,40,0.5);
+    }
+
+    .cell.yellow {
+      background: radial-gradient(circle at 35% 35%, #fff176, #f9a825);
+      box-shadow: inset 0 -3px 6px rgba(0,0,0,0.3), 0 0 12px rgba(249,168,37,0.5);
+    }
+
+    .cell.win-flash {
+      animation: pulse 0.6s ease-in-out infinite alternate;
+    }
+
+    @keyframes pulse {
+      from { filter: brightness(1); }
+      to   { filter: brightness(1.6) drop-shadow(0 0 10px white); }
+    }
+
+    #controls {
+      display: flex;
+      gap: 12px;
+      margin-top: 24px;
+    }
+
+    button.action-btn {
+      padding: 10px 28px;
+      border: none;
+      border-radius: 8px;
+      font-size: 1rem;
+      cursor: pointer;
+      font-weight: 600;
+      transition: transform 0.1s, box-shadow 0.1s;
+    }
+
+    button.action-btn:hover {
+      transform: translateY(-2px);
+      box-shadow: 0 4px 14px rgba(0,0,0,0.3);
+    }
+
+    #restart-btn {
+      background: #f0c040;
+      color: #1a1a2e;
+    }
+
+    #mode-btn {
+      background: #26a69a;
+      color: #fff;
+    }
+
+    #score {
+      display: flex;
+      gap: 40px;
+      margin-bottom: 18px;
+      font-size: 1rem;
+    }
+
+    .score-box {
+      text-align: center;
+    }
+
+    .score-label {
+      font-size: 0.8rem;
+      opacity: 0.7;
+      text-transform: uppercase;
+      letter-spacing: 1px;
+    }
+
+    .score-val {
+      font-size: 2rem;
+      font-weight: 700;
+    }
+
+    .score-val.red  { color: #ef5350; }
+    .score-val.yellow { color: #fdd835; }
+  </style>
+</head>
+<body>
+
+<h1>Connect 4</h1>
+
+<div id="score">
+  <div class="score-box">
+    <div class="score-label" id="p1-label">Player 1</div>
+    <div class="score-val red" id="score-red">0</div>
+  </div>
+  <div class="score-box">
+    <div class="score-label">Draws</div>
+    <div class="score-val" style="color:#aaa" id="score-draw">0</div>
+  </div>
+  <div class="score-box">
+    <div class="score-label" id="p2-label">Player 2</div>
+    <div class="score-val yellow" id="score-yellow">0</div>
+  </div>
+</div>
+
+<div id="status">Red's turn</div>
+
+<div id="board-wrapper">
+  <div id="column-arrows"></div>
+  <div id="board"></div>
+</div>
+
+<div id="controls">
+  <button class="action-btn" id="restart-btn">New Game</button>
+  <button class="action-btn" id="mode-btn">vs CPU</button>
+</div>
+
+<script>
+  const ROWS = 6, COLS = 7;
+  let board, currentPlayer, gameOver, scores, vsAI, aiThinking;
+
+  scores = { red: 0, yellow: 0, draw: 0 };
+  vsAI = false;
+
+  function init() {
+    board = Array.from({ length: ROWS }, () => Array(COLS).fill(null));
+    currentPlayer = 'red';
+    gameOver = false;
+    aiThinking = false;
+    renderBoard();
+    setStatus(`${playerName('red')}'s turn`, 'red');
+  }
+
+  function playerName(p) {
+    if (p === 'red') return 'Red';
+    return vsAI ? 'CPU' : 'Yellow';
+  }
+
+  // ── Rendering ──────────────────────────────────────────────────
+  function renderBoard() {
+    const arrowsEl = document.getElementById('column-arrows');
+    const boardEl  = document.getElementById('board');
+    arrowsEl.innerHTML = '';
+    boardEl.innerHTML  = '';
+
+    for (let c = 0; c < COLS; c++) {
+      const btn = document.createElement('button');
+      btn.className = `arrow-btn ${currentPlayer}-turn`;
+      btn.textContent = '▼';
+      btn.dataset.col = c;
+      btn.addEventListener('click', () => handleClick(c));
+      arrowsEl.appendChild(btn);
+    }
+
+    for (let r = 0; r < ROWS; r++) {
+      for (let c = 0; c < COLS; c++) {
+        const cell = document.createElement('div');
+        cell.className = 'cell' + (board[r][c] ? ` ${board[r][c]}` : '');
+        cell.id = `cell-${r}-${c}`;
+        boardEl.appendChild(cell);
+      }
+    }
+  }
+
+  function updateCell(r, c) {
+    const cell = document.getElementById(`cell-${r}-${c}`);
+    cell.className = 'cell' + (board[r][c] ? ` ${board[r][c]}` : '');
+  }
+
+  function setStatus(msg, color) {
+    const el = document.getElementById('status');
+    el.textContent = msg;
+    el.style.color = color === 'red' ? '#ef5350' : color === 'yellow' ? '#fdd835' : '#eee';
+  }
+
+  // ── Game logic ─────────────────────────────────────────────────
+  function handleClick(col) {
+    if (gameOver || aiThinking) return;
+    if (vsAI && currentPlayer === 'yellow') return;
+    dropPiece(col);
+  }
+
+  function dropPiece(col) {
+    const row = getOpenRow(col);
+    if (row === -1) return;
+
+    board[row][col] = currentPlayer;
+    updateCell(row, col);
+
+    const wins = checkWin(row, col, currentPlayer);
+    if (wins) {
+      flashCells(wins);
+      scores[currentPlayer]++;
+      updateScoreDisplay();
+      setStatus(`${playerName(currentPlayer)} wins! 🎉`, currentPlayer);
+      gameOver = true;
+      return;
+    }
+
+    if (isDraw()) {
+      scores.draw++;
+      updateScoreDisplay();
+      setStatus("It's a draw!", '');
+      gameOver = true;
+      return;
+    }
+
+    currentPlayer = currentPlayer === 'red' ? 'yellow' : 'red';
+    updateArrows();
+
+    if (vsAI && currentPlayer === 'yellow') {
+      setStatus('CPU is thinking…', 'yellow');
+      aiThinking = true;
+      setTimeout(() => {
+        aiMove();
+        aiThinking = false;
+      }, 350);
+    } else {
+      setStatus(`${playerName(currentPlayer)}'s turn`, currentPlayer);
+    }
+  }
+
+  function getOpenRow(col) {
+    for (let r = ROWS - 1; r >= 0; r--) {
+      if (!board[r][col]) return r;
+    }
+    return -1;
+  }
+
+  function isDraw() {
+    return board[0].every(cell => cell !== null);
+  }
+
+  function checkWin(row, col, player) {
+    const dirs = [[0,1],[1,0],[1,1],[1,-1]];
+    for (const [dr, dc] of dirs) {
+      const cells = [[row, col]];
+      for (const sign of [1, -1]) {
+        let r = row + dr*sign, c = col + dc*sign;
+        while (r >= 0 && r < ROWS && c >= 0 && c < COLS && board[r][c] === player) {
+          cells.push([r, c]);
+          r += dr*sign; c += dc*sign;
+        }
+      }
+      if (cells.length >= 4) return cells;
+    }
+    return null;
+  }
+
+  function flashCells(cells) {
+    for (const [r, c] of cells) {
+      document.getElementById(`cell-${r}-${c}`).classList.add('win-flash');
+    }
+  }
+
+  function updateArrows() {
+    document.querySelectorAll('.arrow-btn').forEach(btn => {
+      btn.className = `arrow-btn ${currentPlayer}-turn`;
+    });
+  }
+
+  function updateScoreDisplay() {
+    document.getElementById('score-red').textContent   = scores.red;
+    document.getElementById('score-yellow').textContent = scores.yellow;
+    document.getElementById('score-draw').textContent  = scores.draw;
+  }
+
+  // ── AI (minimax, depth 5) ──────────────────────────────────────
+  function aiMove() {
+    const col = bestMove();
+    dropPiece(col);
+  }
+
+  function bestMove() {
+    let best = -Infinity, bestCol = 3;
+    for (let c = 0; c < COLS; c++) {
+      if (getOpenRow(c) === -1) continue;
+      const r = getOpenRow(c);
+      board[r][c] = 'yellow';
+      const score = minimax(board, 5, -Infinity, Infinity, false);
+      board[r][c] = null;
+      if (score > best) { best = score; bestCol = c; }
+    }
+    return bestCol;
+  }
+
+  function minimax(b, depth, alpha, beta, maximizing) {
+    // Check terminal states
+    for (let r = 0; r < ROWS; r++) {
+      for (let c = 0; c < COLS; c++) {
+        if (!b[r][c]) continue;
+        const w = checkWinBoard(b, r, c, b[r][c]);
+        if (w) return b[r][c] === 'yellow' ? 1000 + depth : -(1000 + depth);
+      }
+    }
+    if (depth === 0 || b[0].every(cell => cell !== null)) return scoreBoard(b);
+
+    if (maximizing) {
+      let val = -Infinity;
+      for (let c = 0; c < COLS; c++) {
+        const r = getOpenRowB(b, c);
+        if (r === -1) continue;
+        b[r][c] = 'yellow';
+        val = Math.max(val, minimax(b, depth-1, alpha, beta, false));
+        b[r][c] = null;
+        alpha = Math.max(alpha, val);
+        if (alpha >= beta) break;
+      }
+      return val;
+    } else {
+      let val = Infinity;
+      for (let c = 0; c < COLS; c++) {
+        const r = getOpenRowB(b, c);
+        if (r === -1) continue;
+        b[r][c] = 'red';
+        val = Math.min(val, minimax(b, depth-1, alpha, beta, true));
+        b[r][c] = null;
+        beta = Math.min(beta, val);
+        if (alpha >= beta) break;
+      }
+      return val;
+    }
+  }
+
+  function getOpenRowB(b, col) {
+    for (let r = ROWS-1; r >= 0; r--) if (!b[r][col]) return r;
+    return -1;
+  }
+
+  function checkWinBoard(b, row, col, player) {
+    const dirs = [[0,1],[1,0],[1,1],[1,-1]];
+    for (const [dr, dc] of dirs) {
+      let count = 1;
+      for (const sign of [1,-1]) {
+        let r = row+dr*sign, c = col+dc*sign;
+        while (r>=0&&r<ROWS&&c>=0&&c<COLS&&b[r][c]===player) { count++; r+=dr*sign; c+=dc*sign; }
+      }
+      if (count >= 4) return true;
+    }
+    return false;
+  }
+
+  function scoreBoard(b) {
+    let s = 0;
+    // centre column preference
+    for (let r = 0; r < ROWS; r++) {
+      if (b[r][3] === 'yellow') s += 3;
+      else if (b[r][3] === 'red') s -= 3;
+    }
+    const dirs = [[0,1],[1,0],[1,1],[1,-1]];
+    for (let r = 0; r < ROWS; r++) {
+      for (let c = 0; c < COLS; c++) {
+        for (const [dr, dc] of dirs) {
+          const window = [];
+          for (let i = 0; i < 4; i++) {
+            const nr = r+dr*i, nc = c+dc*i;
+            if (nr<0||nr>=ROWS||nc<0||nc>=COLS) break;
+            window.push(b[nr][nc]);
+          }
+          if (window.length === 4) s += scoreWindow(window);
+        }
+      }
+    }
+    return s;
+  }
+
+  function scoreWindow(w) {
+    const y = w.filter(x=>x==='yellow').length;
+    const r = w.filter(x=>x==='red').length;
+    const e = w.filter(x=>!x).length;
+    if (y===4) return 100;
+    if (y===3&&e===1) return 5;
+    if (y===2&&e===2) return 2;
+    if (r===3&&e===1) return -4;
+    if (r===4) return -100;
+    return 0;
+  }
+
+  // ── Controls ───────────────────────────────────────────────────
+  document.getElementById('restart-btn').addEventListener('click', init);
+
+  document.getElementById('mode-btn').addEventListener('click', () => {
+    vsAI = !vsAI;
+    document.getElementById('mode-btn').textContent = vsAI ? 'vs Human' : 'vs CPU';
+    document.getElementById('p2-label').textContent = vsAI ? 'CPU' : 'Player 2';
+    scores = { red: 0, yellow: 0, draw: 0 };
+    updateScoreDisplay();
+    init();
+  });
+
+  init();
+</script>
+</body>
+</html>
