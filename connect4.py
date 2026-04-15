@@ -10,18 +10,19 @@ PAD  = 12
 WIDTH  = COLS * CELL + (COLS + 1) * PAD
 HEIGHT = ROWS * CELL + (ROWS + 1) * PAD
 
-BG       = "#12122a"
-BOARD    = "#1565c0"
-BOARD_LT = "#1976d2"   # top edge of board gradient
-EMPTY    = "#0b3d8f"   # deeper hole colour
-HOLE_RIM = "#0d47a1"   # rim around the hole
+BG       = "#13100d"   # near-black warm
+BOARD    = "#5a3018"   # walnut mid-tone
+BOARD_LT = "#6b3d20"   # walnut highlight
+EMPTY    = "#0e0805"   # deep hole (almost black)
+HOLE_RIM = "#2d1208"   # dark warm rim
 RED      = "#e53935"
 RED_HL   = "#ff6b6b"   # specular highlight colour
 YELLOW   = "#fdd835"
 YEL_HL   = "#ffe57f"
-WHITE    = "#eeeeee"
-GREY     = "#888888"
-INDIGO   = "#3949ab"   # mode button colour (replaces teal)
+WHITE    = "#e8d8c8"   # warm cream
+GREY     = "#a08878"   # warm grey
+BRONZE   = "#c28f6c"   # Unify Partners primary
+BRONZE_DK= "#9e6a53"   # Unify Partners secondary
 
 # Difficulty → minimax depth (0 = random / Easy)
 DIFFICULTIES = [("Easy", 0), ("Medium", 3), ("Hard", 6)]
@@ -192,7 +193,7 @@ class Connect4(tk.Tk):
         small = tkfont.Font(family="Segoe UI", size=10)
         tiny  = tkfont.Font(family="Segoe UI", size=9, weight="bold")
 
-        tk.Label(self, text="CONNECT 4", bg=BG, fg="#f0c040", font=big).pack(pady=(18, 4))
+        tk.Label(self, text="CONNECT 4", bg=BG, fg=BRONZE, font=big).pack(pady=(18, 4))
 
         # Score bar
         score_frame = tk.Frame(self, bg=BG)
@@ -200,13 +201,13 @@ class Connect4(tk.Tk):
 
         self.lbl_p1 = tk.Label(score_frame, text="Player 1", bg=BG, fg=RED,    font=small)
         self.lbl_p1.grid(row=0, column=0, padx=20)
-        tk.Label(score_frame, text="Draws",    bg=BG, fg=GREY,   font=small).grid(row=0, column=1, padx=20)
+        tk.Label(score_frame, text="Draws",    bg=BG, fg=WHITE,   font=small).grid(row=0, column=1, padx=20)
         self.lbl_p2 = tk.Label(score_frame, text="Player 2", bg=BG, fg=YELLOW, font=small)
         self.lbl_p2.grid(row=0, column=2, padx=20)
 
         self.score_red  = tk.Label(score_frame, text="0", bg=BG, fg=RED,    font=big)
         self.score_red.grid(row=1, column=0, padx=20)
-        self.score_draw = tk.Label(score_frame, text="0", bg=BG, fg=GREY,   font=big)
+        self.score_draw = tk.Label(score_frame, text="0", bg=BG, fg=WHITE,  font=big)
         self.score_draw.grid(row=1, column=1, padx=20)
         self.score_yel  = tk.Label(score_frame, text="0", bg=BG, fg=YELLOW, font=big)
         self.score_yel.grid(row=1, column=2, padx=20)
@@ -226,12 +227,12 @@ class Connect4(tk.Tk):
         btn_frame.pack(pady=(10, 4))
 
         tk.Button(btn_frame, text="New Game", command=self._new_game,
-                  bg="#f0c040", fg=BG, font=med, padx=16, pady=6,
+                  bg=BRONZE, fg="#1a0e06", font=med, padx=16, pady=6,
                   relief="flat", cursor="hand2").grid(row=0, column=0, padx=8)
 
         self.mode_btn = tk.Button(btn_frame, text="vs CPU",
                                   command=self._toggle_mode,
-                                  bg=INDIGO, fg="white", font=med,
+                                  bg=BRONZE_DK, fg="#f5e8dc", font=med,
                                   padx=16, pady=6, relief="flat", cursor="hand2")
         self.mode_btn.grid(row=0, column=1, padx=8)
 
@@ -239,7 +240,7 @@ class Connect4(tk.Tk):
         self.diff_frame = tk.Frame(self, bg=BG)
         self.diff_frame.pack(pady=(4, 14))
 
-        tk.Label(self.diff_frame, text="Difficulty:", bg=BG, fg=GREY,
+        tk.Label(self.diff_frame, text="Difficulty:", bg=BG, fg=WHITE,
                  font=small).grid(row=0, column=0, padx=(0, 6))
 
         self._diff_btns = []
@@ -266,12 +267,11 @@ class Connect4(tk.Tk):
     # ── Difficulty ───────────────────────────────────────────────
     def _set_difficulty(self, depth, active_idx):
         self.ai_depth = depth
-        labels = {"Easy": ("#2e7d32","#fff"), "Medium": ("#e65100","#fff"), "Hard": ("#b71c1c","#fff")}
         for i, (btn, bg_on, label) in enumerate(self._diff_btns):
             if i == active_idx:
                 btn.config(bg=bg_on, fg="#fff", relief="solid")
             else:
-                btn.config(bg="#16213e", fg=GREY, relief="flat")
+                btn.config(bg="#2d1a0e", fg=GREY, relief="flat")
 
     # ── Drawing ──────────────────────────────────────────────────
     def _cell_xy(self, row, col):
@@ -295,7 +295,7 @@ class Connect4(tk.Tk):
         if val is None:
             # Dark rim (hole edge)
             self.canvas.create_oval(x0 - 2, y0 - 2, x1 + 2, y1 + 2,
-                                    fill="#071e4a", outline="", tags="board")
+                                    fill=HOLE_RIM, outline="", tags="board")
             is_ghost = (not self.game_over and self.hover_col == c
                         and get_open_row(self.board, c) == r)
             if is_ghost:
@@ -337,8 +337,8 @@ class Connect4(tk.Tk):
         self.canvas.delete("fw")
         self._particles = []
 
-        red_colors    = ["#ef5350","#ff8a80","#ff1744","#ffcdd2","#ff6d00","white"]
-        yellow_colors = ["#fdd835","#fff176","#ffea00","#fffde7","#ff6f00","white"]
+        red_colors    = ["#ef5350","#ff8a80","#ff1744","#c28f6c","#e8a87c","white"]
+        yellow_colors = ["#fdd835","#fff176","#ffea00","#c28f6c","#e8a87c","white"]
         colors = red_colors if winner == "red" else yellow_colors
 
         # Several bursts at staggered times
@@ -456,7 +456,7 @@ class Connect4(tk.Tk):
         self.status_var.set(text)
         if player == "red":       self.status_lbl.config(fg=RED)
         elif player == "yellow":  self.status_lbl.config(fg=YELLOW)
-        else:                     self.status_lbl.config(fg=WHITE)
+        else:                     self.status_lbl.config(fg=BRONZE)
 
     def _update_scores(self):
         self.score_red.config( text=str(self.scores["red"]))
