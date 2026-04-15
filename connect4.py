@@ -10,15 +10,18 @@ PAD  = 12
 WIDTH  = COLS * CELL + (COLS + 1) * PAD
 HEIGHT = ROWS * CELL + (ROWS + 1) * PAD
 
-BG      = "#1a1a2e"
-BOARD   = "#1565c0"
-EMPTY   = "#0d47a1"
-RED     = "#e53935"
-YELLOW  = "#fdd835"
-RED_HL  = "#ff8a80"
-YEL_HL  = "#fff176"
-WHITE   = "#eeeeee"
-GREY    = "#aaaaaa"
+BG       = "#12122a"
+BOARD    = "#1565c0"
+BOARD_LT = "#1976d2"   # top edge of board gradient
+EMPTY    = "#0b3d8f"   # deeper hole colour
+HOLE_RIM = "#0d47a1"   # rim around the hole
+RED      = "#e53935"
+RED_HL   = "#ff6b6b"   # specular highlight colour
+YELLOW   = "#fdd835"
+YEL_HL   = "#ffe57f"
+WHITE    = "#eeeeee"
+GREY     = "#888888"
+INDIGO   = "#3949ab"   # mode button colour (replaces teal)
 
 # Difficulty → minimax depth (0 = random / Easy)
 DIFFICULTIES = [("Easy", 0), ("Medium", 3), ("Hard", 6)]
@@ -228,7 +231,7 @@ class Connect4(tk.Tk):
 
         self.mode_btn = tk.Button(btn_frame, text="vs CPU",
                                   command=self._toggle_mode,
-                                  bg="#26a69a", fg="white", font=med,
+                                  bg=INDIGO, fg="white", font=med,
                                   padx=16, pady=6, relief="flat", cursor="hand2")
         self.mode_btn.grid(row=0, column=1, padx=8)
 
@@ -284,25 +287,40 @@ class Connect4(tk.Tk):
 
     def _draw_cell(self, r, c, flash=False):
         x, y = self._cell_xy(r, c)
-        x0, x1 = x - CELL // 2 + 4, x + CELL // 2 - 4
-        y0, y1 = y - CELL // 2 + 4, y + CELL // 2 - 4
+        margin = 4
+        x0, x1 = x - CELL // 2 + margin, x + CELL // 2 - margin
+        y0, y1 = y - CELL // 2 + margin, y + CELL // 2 - margin
         val = self.board[r][c]
 
         if val is None:
-            if (not self.game_over and self.hover_col == c
-                    and get_open_row(self.board, c) == r):
+            # Dark rim (hole edge)
+            self.canvas.create_oval(x0 - 2, y0 - 2, x1 + 2, y1 + 2,
+                                    fill="#071e4a", outline="", tags="board")
+            is_ghost = (not self.game_over and self.hover_col == c
+                        and get_open_row(self.board, c) == r)
+            if is_ghost:
                 ghost = RED_HL if self.current == "red" else YEL_HL
                 self.canvas.create_oval(x0, y0, x1, y1,
                                         fill=ghost, outline="", stipple="gray50", tags="board")
             else:
                 self.canvas.create_oval(x0, y0, x1, y1,
                                         fill=EMPTY, outline="", tags="board")
-        elif val == "red":
-            self.canvas.create_oval(x0, y0, x1, y1,
-                                    fill=RED_HL if flash else RED, outline="", tags="board")
         else:
+            # Base piece colour
+            base  = (RED_HL  if flash else RED)    if val == "red" else (YEL_HL if flash else YELLOW)
+            dark  = "#b71c1c" if val == "red" else "#f57f17"
+            # Dark bottom shadow oval
+            self.canvas.create_oval(x0, y0 + 4, x1, y1 + 4,
+                                    fill=dark, outline="", tags="board")
+            # Main piece
             self.canvas.create_oval(x0, y0, x1, y1,
-                                    fill=YEL_HL if flash else YELLOW, outline="", tags="board")
+                                    fill=base, outline="", tags="board")
+            # Specular highlight (small bright oval, top-left)
+            hw = (x1 - x0) * 0.32
+            hh = (y1 - y0) * 0.18
+            hx, hy = x0 + (x1 - x0) * 0.28, y0 + (y1 - y0) * 0.18
+            self.canvas.create_oval(hx, hy, hx + hw, hy + hh,
+                                    fill="white", outline="", stipple="gray50", tags="board")
 
     def _redraw_win_cells(self):
         if not self.win_cells:
